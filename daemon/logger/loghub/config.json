@@ -1,0 +1,19 @@
+{
+    "drivers": [
+        {
+            "name": "json-file",
+            "options": {
+                "max-size": "100m",
+                "max-file": "2"
+            }
+        },
+        {
+            "name": "redis",
+            "options": {
+                "server": "10.58.113.26",
+                "port": "6379",
+                "database": "0"
+            }
+        }
+    ]
+}
