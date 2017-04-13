@@ -17,6 +17,7 @@ var config loghubConfig
 type loghubConfig struct {
 	Drivers []struct {
 		Name    string            `json:"name"`
+		Enabled bool              `json:"enabled"`
 		Options map[string]string `json:"options"`
 	} `json:"drivers"`
 }
@@ -40,27 +41,29 @@ func init() {
 func New(ctx logger.Context) (logger.Logger, error) {
 
 	hub := loghubLogger{
-		writers: make([]logger.Logger, len(config.Drivers)),
+		writers: []logger.Logger{},
 	}
 
-	for index, driver := range config.Drivers {
-		creator, err := logger.GetLogDriver(driver.Name)
-		if err != nil {
-			return nil, err
-		}
-		cc, err := makeContext(ctx, driver.Name, driver.Options)
-		if err != nil {
-			return nil, err
-		}
-		writer, err := creator(cc)
-		if err != nil {
-			return nil, err
-		}
-		hub.writers[index] = writer
+	for _, driver := range config.Drivers {
+		if driver.Enabled {
+			creator, err := logger.GetLogDriver(driver.Name)
+			if err != nil {
+				return nil, err
+			}
+			cc, err := makeContext(ctx, driver.Name, driver.Options)
+			if err != nil {
+				return nil, err
+			}
+			writer, err := creator(cc)
+			if err != nil {
+				return nil, err
+			}
+			hub.writers = append(hub.writers, writer)
 
-		reader, ok := writer.(logger.LogReader)
-		if ok {
-			hub.reader = reader
+			reader, ok := writer.(logger.LogReader)
+			if ok {
+				hub.reader = reader
+			}
 		}
 	}
 
@@ -72,12 +75,11 @@ func ValidateLogOpt(cfg map[string]string) error {
 	for key := range cfg {
 		switch key {
 		case "config":
-			return initAndValidate(cfg[key])
 		default:
 			return fmt.Errorf("unknown log opt '%s' for loghub log driver", key)
 		}
 	}
-	return nil
+	return validateAndInit(cfg["config"])
 }
 
 // Log converts logger.Message to jsonlog.JSONLog and serializes it to file.
@@ -101,7 +103,11 @@ func (l *loghubLogger) Name() string {
 	return Name
 }
 
-func initAndValidate(filename string) error {
+func validateAndInit(filename string) error {
+	if len(config.Drivers) != 0 {
+		return nil
+	}
+
 	logrus.Infof("Loghub driver is going to load configuration from %s", filename)
 
 	raw, err := ioutil.ReadFile(filename)
@@ -115,11 +121,13 @@ func initAndValidate(filename string) error {
 	}
 
 	for _, driver := range config.Drivers {
-		err = logger.ValidateLogOpts(driver.Name, driver.Options)
-		if err != nil {
-			return err
+		if driver.Enabled {
+			err = logger.ValidateLogOpts(driver.Name, driver.Options)
+			if err != nil {
+				return err
+			}
+			logrus.Infof("Loghub driver has successfully validated sub driver %s", driver.Name)
 		}
-		logrus.Infof("Loghub driver has successfully validated sub driver %s", driver.Name)
 	}
 
 	logrus.Infoln("Loghub driver was fully loaded and configured")

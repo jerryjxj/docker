@@ -1,0 +1,31 @@
+package main
+
+import (
+    sredis "github.wdf.sap.corp/sigma-anywhere/saptail/redis"
+    "fmt"
+)
+
+func checkErr(err error) {
+    if err != nil {
+        panic(err)
+    }
+}
+func main() {
+    r, err := sredis.New("127.0.0.1", "6379", 1)
+    checkErr(err)
+
+    reply, err := r.Client.Do("KEYS", "*")
+    checkErr(err)
+    fmt.Println(reply)
+
+    fmt.Println(reply)
+    r.GetOffset("cdcd", 1)
+
+    reply, err = r.Client.Do("keys", "*")
+    checkErr(err)
+    fmt.Println(reply)
+    r.GetOffset("cdcd", 2)
+
+    reply, err = r.Client.Do("keys", "*")
+    checkErr(err)
+}

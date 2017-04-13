@@ -18,7 +18,6 @@ import (
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/daemon/exec"
 	"github.com/docker/docker/daemon/logger"
-	"github.com/docker/docker/daemon/logger/jsonfilelog"
 	"github.com/docker/docker/daemon/network"
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/layer"
@@ -327,11 +326,9 @@ func (container *Container) StartLogger(cfg containertypes.LogConfig) (logger.Lo
 	}
 
 	// Set logging file for "json-logger"
-	if cfg.Type == jsonfilelog.Name {
-		ctx.LogPath, err = container.GetRootResourcePath(fmt.Sprintf("%s-json.log", container.ID))
-		if err != nil {
-			return nil, err
-		}
+	ctx.LogPath, err = container.GetRootResourcePath(fmt.Sprintf("%s-json.log", container.ID))
+	if err != nil {
+		return nil, err
 	}
 	return c(ctx)
 }

@@ -3,16 +3,24 @@ package redislog
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/daemon/logger"
+	"github.wdf.sap.corp/sigma-anywhere/saptail"
 )
 
 // Name is the name of the file that the redis logs to.
 const Name = "redis"
 
+var tail saptail.SaptailInterface
+
 // redislog is Logger implementation for default Docker logging.
 type redislog struct {
+	writer saptail.SaptailInterface
+	extra  logger.LogAttributes
 }
 
 func init() {
@@ -27,8 +35,12 @@ func init() {
 // New creates new redislog which writes to filename passed in
 // on given context.
 func New(ctx logger.Context) (logger.Logger, error) {
-	// TODO
-	return &redislog{}, nil
+	extra := extractLabels(ctx.Config, ctx.ContainerLabels)
+	log := redislog{
+		writer: tail,
+		extra:  extra,
+	}
+	return &log, nil
 }
 
 // ValidateLogOpt looks for log options `server` (e.g. redis.smec.sap.corp:6379)
@@ -39,15 +51,24 @@ func ValidateLogOpt(cfg map[string]string) error {
 		case "port":
 		case "database":
 		default:
-			return fmt.Errorf("unknown log opt '%s' for redis log driver", key)
+			if strings.Index(key, "labels/") != 0 {
+				return fmt.Errorf("unknown log opt '%s' for redis log driver", key)
+			}
 		}
 	}
-	return initAndValidate(cfg["server"], cfg["port"], cfg["database"])
+	return validateAndInit(cfg["server"], cfg["port"], cfg["database"])
 }
 
 // Log converts logger.Message to jsonlog.JSONLog and serializes it to file.
 func (l *redislog) Log(msg *logger.Message) error {
-	return nil
+	m := logger.Message{
+		Line:      msg.Line,
+		Source:    msg.Source,
+		Timestamp: msg.Timestamp,
+		Attrs:     l.extra,
+		// Partial:   msg.Partial,
+	}
+	return l.writer.Message(&m, false)
 }
 
 // Close closes underlying file and signals all readers to stop.
@@ -60,8 +81,40 @@ func (l *redislog) Name() string {
 	return Name
 }
 
-func initAndValidate(server, port, database string) error {
+func validateAndInit(server, port, database string) error {
+	if tail != nil {
+		return nil
+	}
+
 	logrus.Infof("Initialize redis connection to %s:%s.%s", server, port, database)
-	// TODO:
+
+	db, err := strconv.Atoi(database)
+	if err != nil {
+		return err
+	}
+	tail, err = saptail.New(server, port, db)
+	if err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func extractLabels(config map[string]string, labels map[string]string) logger.LogAttributes {
+	extra := logger.LogAttributes{}
+	re := regexp.MustCompile(`\$\((.*?)\)`)
+
+	for k, v := range config {
+		if strings.Index(k, "labels/") == 0 {
+			if tokens := strings.SplitN(k, "/", 2); len(tokens) == 2 {
+				if m := re.FindStringSubmatch(v); len(m) == 2 {
+					extra[tokens[1]] = labels[m[1]]
+				} else {
+					extra[tokens[1]] = v
+				}
+			}
+		}
+	}
+
+	return extra
 }
