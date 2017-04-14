@@ -2,10 +2,11 @@
 package redislog
 
 import (
+	"bytes"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/daemon/logger"
@@ -102,15 +103,28 @@ func validateAndInit(server, port, database string) error {
 
 func extractLabels(config map[string]string, labels map[string]string) logger.LogAttributes {
 	extra := logger.LogAttributes{}
-	re := regexp.MustCompile(`\$\((.*?)\)`)
+
+	funcMap := template.FuncMap{
+		"labels": func(key string) string {
+			return labels[key]
+		},
+	}
 
 	for k, v := range config {
 		if strings.Index(k, "labels/") == 0 {
 			if tokens := strings.SplitN(k, "/", 2); len(tokens) == 2 {
-				if m := re.FindStringSubmatch(v); len(m) == 2 {
-					extra[tokens[1]] = labels[m[1]]
+				key := tokens[1]
+				if t, err := template.New("").Funcs(funcMap).Parse(v); err != nil {
+					logrus.Error(err)
+					extra[key] = v
 				} else {
-					extra[tokens[1]] = v
+					buf := &bytes.Buffer{}
+					if err := t.Execute(buf, labels); err != nil {
+						logrus.Error(err)
+						extra[key] = v
+					} else {
+						extra[key] = buf.String()
+					}
 				}
 			}
 		}

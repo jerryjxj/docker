@@ -22,11 +22,12 @@ func Test_Message_lazymode_false(t *testing.T) {
         Source:    "filename",
         Timestamp: time.Now(),
         Attrs: map[string]string{
-            "pod":       "liuzheng",
+            "node":      "192.168.0.1",
             "landscape": "us",
             "namespace": "cy",
+            "pod":       "liuzheng",
             "container": "liuzheng-container",
-            "node":      "192.168.0.1",
+            "logkey":    "192.168.0.1:us:cy:liuzheng:liuzheng-container",
         },
     }
     tail.Message(&msg, false)

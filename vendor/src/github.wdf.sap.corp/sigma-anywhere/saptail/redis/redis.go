@@ -176,7 +176,7 @@ func (rdclient *Redis) SendMessage(msg *logger.Message, lazymode bool) (error) {
 
     } else {
         client := rdclient.Pool.Get()
-        err = client.Send("LPUSH", msg.Attrs["pod"], msg.Line)
+        err = client.Send("LPUSH", msg.Attrs["logkey"], msg.Line)
         defer client.Close()
         checkErr(err, msg)
         //rdclient.SetOffset(msg.Source, msg.Offset)
