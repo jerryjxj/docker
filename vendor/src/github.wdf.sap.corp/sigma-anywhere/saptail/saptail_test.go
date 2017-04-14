@@ -2,9 +2,7 @@ package saptail
 
 import (
     "testing"
-    //redis "github.wdf.sap.corp/sigma-anywhere/saptail/redis"
     "time"
-    //redis "github.wdf.sap.corp/sigma-anywhere/saptail/redis"
     "github.com/docker/docker/daemon/logger"
 )
 
@@ -16,6 +14,8 @@ func Test_Message_lazymode_false(t *testing.T) {
     if (err != nil) {
         t.Error(err)
     }
+    t.Log("newed")
+    t.Log(tail)
     defer tail.Close()
     msg := logger.Message{
         Line:      []byte("safdfa"),
@@ -28,11 +28,6 @@ func Test_Message_lazymode_false(t *testing.T) {
             "container": "liuzheng-container",
             "node":      "192.168.0.1",
         },
-        //Stat_t: redis.Stat_t{
-        //    Dev:  333,
-        //    Ino:  222,
-        //    Size: 333,
-        //},
     }
     tail.Message(&msg, false)
 }
@@ -47,11 +42,6 @@ func Test_Message_lazymode_true(t *testing.T) {
         Line:      []byte("safdfa"),
         Source:    "filename",
         Timestamp: time.Now(),
-        //Stat_t: redis.Stat_t{
-        //    Dev:  333,
-        //    Ino:  222,
-        //    Size: 333,
-        //},
     }
     tail.Message(&msg, true)
 }

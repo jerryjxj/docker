@@ -5,13 +5,19 @@ import (
     "github.com/pkg/errors"
     "github.com/docker/docker/daemon/logger"
     "log"
+    "time"
 )
+
+var pool *redis.Pool
+var idelTime = time.Duration(10)
 
 type Redis struct {
     Url    string
     Port   string
     DB     int
+    Pool   *redis.Pool
     Client redis.Conn
+    flash  bool // TODO: this flash should be chan bool, need to be improved
 }
 
 type RedisInterface interface {
@@ -22,6 +28,7 @@ type RedisInterface interface {
     SendMessage(msg *logger.Message, lazymode bool) (error)
     HealthCheck() (string, error)
     Close() (error)
+    flush() (error)
 }
 type Stat_t struct {
     Dev       uint64
@@ -39,17 +46,20 @@ type Stat_t struct {
     Ctimespec int64
 }
 
-//type LogAttributes map[string]string
-//type Message struct {
-//    Line      []byte
-//    Source    string
-//    Timestamp time.Time
-//    Attrs     LogAttributes
-//    Partial   bool
-//    Offset    uint64
-//    Stat_t    Stat_t
-//}
-
+func newPool(addr string, DB int) *redis.Pool {
+    return &redis.Pool{
+        MaxIdle:     3,
+        IdleTimeout: 240 * time.Second,
+        Dial: func() (redis.Conn, error) {
+            c, err := redis.Dial("tcp", addr)
+            if err != nil {
+                return nil, err
+            }
+            c.Do("SELECT", DB)
+            return c, nil
+        },
+    }
+}
 func checkErr(err error, msg ...interface{}) {
     if err != nil {
         log.Printf("%v", err)
@@ -57,24 +67,30 @@ func checkErr(err error, msg ...interface{}) {
     }
 }
 func New(redisurl, redisport string, DB int) (RedisInterface, error) {
-    client, err := redis.Dial("tcp", redisurl+":"+redisport)
-    if err != nil {
-        return nil, err
-    }
-    client.Do("SELECT", DB)
+    pool = newPool(redisurl+":"+redisport, DB)
+    go func() {
+        for {
+            client := pool.Get()
+            client.Do("PING")
+            defer client.Close()
+            time.Sleep(idelTime * time.Second)
+        }
+    }()
     var R RedisInterface
     R = &Redis{
-        Client: client,
-        Url:    redisurl,
-        Port:   redisport,
-        DB:     DB,
+        //Client: client,
+        Url:   redisurl,
+        Port:  redisport,
+        Pool:  pool,
+        DB:    DB,
+        flash: false,
     }
-    r, err := R.HealthCheck()
-    if (r == "PONG") {
-        return R, nil
-    } else {
-        return nil, err
-    }
+    go func() {
+        for {
+            R.flush()
+        }
+    }()
+    return R, nil
 }
 
 func (rdclient *Redis) GetOffset(filename string, params ...int) (int64, error) {
@@ -142,22 +158,26 @@ func (rdclient *Redis) SetFileStat(filename string, stat Stat_t, params ...int) 
 }
 
 func (rdclient *Redis) HealthCheck() (string, error) {
-    res, err := rdclient.Client.Do("ping")
+    client := rdclient.Pool.Get()
+    res, err := client.Do("ping")
+    defer client.Close()
     s, err := redis.String(res, err)
     return s, err
 }
 
 func (rdclient *Redis) Close() (error) {
-    return rdclient.Client.Close()
+    rdclient.flush()
+    return rdclient.Pool.Close()
 }
 
 func (rdclient *Redis) SendMessage(msg *logger.Message, lazymode bool) (error) {
     var err error
-    //rdclient.Client.Do("SELECT", rdclient.DB)
     if lazymode {
 
     } else {
-        _, err = rdclient.Client.Do("LPUSH", msg.Attrs["pod"], msg.Line)
+        client := rdclient.Pool.Get()
+        err = client.Send("LPUSH", msg.Attrs["pod"], msg.Line)
+        defer client.Close()
         checkErr(err, msg)
         //rdclient.SetOffset(msg.Source, msg.Offset)
         //rdclient.SetFileStat(msg.Source, msg.Stat_t)
@@ -183,4 +203,14 @@ func (rdclient *Redis) readmeOffset(DB int) {
     } else if (reply != readme) {
         rdclient.Client.Do("SET", "README", readme)
     }
+}
+
+func (rdclient *Redis) flush() (error) {
+    if (rdclient.flash) {
+        time.Sleep(1 * time.Second)
+    }
+    client := rdclient.Pool.Get()
+    err := client.Flush()
+    defer client.Close()
+    return err
 }
